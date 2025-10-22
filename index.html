@@ -1,0 +1,1144 @@
+<!doctype html>
+<html lang="zh-Hant" class="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CQE | AI小教室-開課時段調查</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            bg: '#0f1115', card: '#151922', fg: '#e7ebf2', muted: '#9aa5b1',
+            accent: '#256D3D', ok: '#44c08a', warn: '#ffb020', danger: '#ff645d',
+            border: '#273043', chip: '#1b2130'
+          },
+          borderRadius: { '2xl': '1rem' }
+        }
+      }
+    }
+  </script>
+  <style>
+    .grid-cell { user-select: none; }
+    /* Dark scrollbars */
+    .scrollbar-thin{scrollbar-width:thin; scrollbar-color:#2b3345 #131823}
+    .scrollbar-thin::-webkit-scrollbar{height:8px;width:8px}
+    .scrollbar-thin::-webkit-scrollbar-track{background:#131823}
+    .scrollbar-thin::-webkit-scrollbar-thumb{background:#2b3345;border-radius:8px}
+    /* Ensure inputs keep dark mode appearance even when autofilled or focused */
+    input, textarea { color: var(--tw-text-opacity, 1); }
+    /* Specific override for admin inputs to avoid light autofill background */
+    #adminUser, #adminPass { background-color: rgba(27,33,48,1) !important; color: #e7ebf2 !important; }
+    /* Chrome autofill persistent style */
+    input:-webkit-autofill, input:-webkit-autofill:hover, input:-webkit-autofill:focus {
+      -webkit-box-shadow: 0 0 0px 1000px rgba(27,33,48,1) inset !important;
+      box-shadow: 0 0 0px 1000px rgba(27,33,48,1) inset !important;
+      -webkit-text-fill-color: #e7ebf2 !important;
+    }
+
+    /* Number input dark mode + spinner adjustments */
+    input[type="number"]{
+      background:#1b2130; color:#e7ebf2; border:1px solid #273043; border-radius:0.75rem; padding:0.5rem 0.75rem;
+    }
+    /* Hide default spinner on Chromium to avoid bright arrows */
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button{
+      -webkit-appearance: none; margin: 0;
+    }
+    /* Remove spinner on Firefox */
+    input[type="number"]{
+      appearance: textfield; /* standard */
+      -moz-appearance: textfield;
+    }
+
+    /* Dark style for file input and button */
+    input[type="file"]{
+      color:#e7ebf2; background:#1b2130; border:1px solid #273043; border-radius:0.75rem; padding:0.5rem 0.75rem;
+    }
+    input[type="file"]::file-selector-button{
+      background:#2a3346; color:#e7ebf2; border:1px solid #3a455e; border-radius:0.5rem; padding:0.4rem 0.75rem; margin-right:0.75rem; cursor:pointer;
+    }
+    input[type="file"]:hover::file-selector-button{ background:#33405a; }
+    /* Safari */
+    input[type="file"]::-webkit-file-upload-button{ background:#2a3346; color:#e7ebf2; border:1px solid #3a455e; border-radius:0.5rem; padding:0.4rem 0.75rem; margin-right:0.75rem; cursor:pointer; }
+    input[type="file"]:hover::-webkit-file-upload-button{ background:#33405a; }
+
+    /* Dark select with custom arrow slightly shifted left */
+    .select-compact-arrow{
+      appearance: none; -webkit-appearance: none; -moz-appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5.5 7.5L10 12l4.5-4.5' stroke='%239aa5b1' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-size: 14px 14px; background-position: right 1rem center;
+      padding-right: 2.25rem; /* keep text away from arrow */
+    }
+
+    /* Make table headers clickable for sorting */
+    table.sortable thead th{ cursor:pointer; }
+  </style>
+  <!-- Supabase JS -->
+  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+  <!-- PapaParse for CSV -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body class="bg-bg text-fg min-h-screen">
+  <div id="app" class="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8">
+    <header class="flex items-center justify-between mb-4">
+      <div class="flex items-center gap-1">
+  <img src="bear-logo.png" alt="logo" class="h-10 w-10 rounded-md object-contain" />
+        <h1 class="text-2xl font-semibold">CQE | AI小教室-開課時段調查</h1>
+      </div>
+      <div id="whoami" class="text-sm text-muted"></div>
+    </header>
+
+    <!-- ======= 登入區 ======= -->
+    <section id="loginSection" class="grid md:grid-cols-2 gap-6">
+      <div class="bg-card rounded-2xl p-5 border border-border">
+        <h2 class="text-lg font-semibold mb-3">學員登入</h2>
+        <label class="block text-sm text-muted mb-1">Employee ID</label>
+        <input id="empIdInput" class="w-full bg-chip rounded-xl px-3 py-2 outline-none border border-border" placeholder="例如：A123456" />
+        <button id="loginLearnerBtn" class="mt-3 px-4 py-2 rounded-xl bg-accent hover:opacity-90">登入</button>
+        <p class="text-xs text-muted mt-2">* 以員工編號登入。登入後僅能填寫可上課時段與查看個人狀態。</p>
+      </div>
+      <div class="bg-card rounded-2xl p-5 border border-border">
+        <h2 class="text-lg font-semibold mb-3">Admin 登入</h2>
+        <label class="block text-sm text-muted mb-1">帳號</label>
+    <input id="adminUser" class="w-full bg-chip rounded-xl px-3 py-2 outline-none border border-border" placeholder="請輸入帳號" />
+        <label class="block text-sm text-muted mt-3 mb-1">密碼</label>
+    <input id="adminPass" type="password" class="w-full bg-chip rounded-xl px-3 py-2 outline-none border border-border" placeholder="請輸入密碼" />
+        <button id="loginAdminBtn" class="mt-3 px-4 py-2 rounded-xl bg-accent hover:opacity-90">登入</button>
+        <p class="text-xs text-muted mt-2">
+      </div>
+    </section>
+
+    <!-- ======= 主操作區（登入後顯示） ======= -->
+    <section id="appSection" class="hidden">
+      <nav class="flex flex-wrap gap-2 mb-4 items-center">
+        <button data-tab="tab-survey" class="tab-btn px-3 py-2 rounded-xl bg-chip border border-border">參加時段</button>
+        <button data-tab="tab-stats" class="tab-btn px-3 py-2 rounded-xl bg-chip border border-border">回覆統計</button>
+  <button data-tab="tab-admin" class="tab-btn px-3 py-2 rounded-xl bg-chip border border-border hidden">課程/名單</button>
+  <button id="logoutBtn" class="ml-auto px-3 py-2 rounded-xl bg-chip border border-border">登出</button>
+      </nav>
+
+      <!-- ==== 可用性填寫（學員/管理員都可看） ==== -->
+      <div id="tab-survey" class="tab-panel bg-card rounded-2xl border border-border p-4">
+        <div class="flex flex-col sm:flex-row sm:items-end gap-3 mb-4">
+          <div>
+            <select id="surveyInstanceSel" class="bg-chip rounded-xl px-3 py-2 border border-border min-w-[260px] select-compact-arrow"></select>
+          </div>
+
+          <div class="ml-auto flex gap-2">
+            <button id="btnClearAll" class="px-3 py-2 rounded-xl bg-chip border border-border">清空</button>
+            <button id="btnSaveAvail" class="px-3 py-2 rounded-xl bg-accent">儲存</button>
+          </div>
+        </div>
+        <div class="overflow-auto scrollbar-thin">
+          <div id="grid" class="inline-block"></div>
+        </div>
+      </div>
+
+      <!-- ==== 回覆統計 ==== -->
+      <div id="tab-stats" class="hidden tab-panel bg-card rounded-2xl border border-border p-4">
+        <div class="flex items-center gap-4 mb-4">
+          <div>
+            <select id="statsInstanceSel" class="bg-chip rounded-xl px-3 py-2 border border-border min-w-[260px] select-compact-arrow"></select>
+          </div>
+          <div class="ml-auto flex gap-2">
+            <button id="btnLoadStats" class="px-3 py-2 rounded-xl bg-chip border border-border">載入</button>
+            <button id="btnExportFilled" class="px-3 py-2 rounded-xl bg-chip border border-border">匯出已回覆</button>
+            <button id="btnExportSlotStats" class="px-3 py-2 rounded-xl bg-chip border border-border">匯出時段統計</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2 gap-4">
+          <div class="bg-card p-3 rounded-xl border border-border">
+            <div class="mb-2">
+              <div id="statsSummary" class="text-sm text-muted">已回覆 : 0人 / TTL: 0人</div>
+            </div>
+            <div class="overflow-auto max-h-64 scrollbar-thin">
+              <table id="filledTable" class="min-w-full text-sm border border-border border-collapse">
+                <thead>
+                  <tr class="text-left text-muted bg-chip/50">
+                    <th class="px-3 py-2 border border-border">部門</th>
+                    <th class="px-3 py-2 border border-border">組站</th>
+                    <th class="px-3 py-2 border border-border">ASE_ID</th>
+                    <th class="px-3 py-2 border border-border">姓名</th>
+                    <th class="px-3 py-2 border border-border">姓名英文</th>
+                  </tr>
+                </thead>
+                <tbody id="filledBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="bg-card p-3 rounded-xl border border-border">
+            <div class="mb-2">
+              <div id="unfilledHeader" class="text-sm text-muted">未回覆: 0人</div>
+            </div>
+            <div class="overflow-auto max-h-64 scrollbar-thin">
+              <table id="unfilledTable" class="min-w-full text-sm border border-border border-collapse">
+                <thead>
+                  <tr class="text-left text-muted bg-chip/50">
+                    <th class="px-3 py-2 border border-border">部門</th>
+                    <th class="px-3 py-2 border border-border">組站</th>
+                    <th class="px-3 py-2 border border-border">ASE_ID</th>
+                    <th class="px-3 py-2 border border-border">姓名</th>
+                    <th class="px-3 py-2 border border-border">姓名英文</th>
+                  </tr>
+                </thead>
+                <tbody id="unfilledBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ==== 推薦時段（Top N） ==== -->
+      <div class="mt-4 bg-card rounded-2xl border border-border p-4">
+        <div class="flex items-end gap-3 mb-3">
+          <div>
+            <label class="block text-sm text-muted">顯示前 N 名</label>
+            <input id="topN" type="number" value="5" min="1" max="50" class="w-24 bg-chip rounded-xl px-3 py-2 border border-border" />
+          </div>
+          <button id="btnLoadTop" class="px-3 py-2 rounded-xl bg-accent">時段統計</button>
+          <div id="topHint" class="text-sm text-muted"></div>
+        </div>
+        <div class="overflow-auto">
+          <table id="topTable" class="min-w-full text-sm border border-border border-collapse">
+            <thead>
+              <tr class="text-left text-muted bg-chip/50">
+                <th class="px-3 py-2 border border-border">Seq</th>
+                <th class="px-3 py-2 border border-border">星期</th>
+                <th class="px-3 py-2 border border-border">開始</th>
+                <th class="px-3 py-2 border border-border">結束</th>
+                <th class="px-3 py-2 border border-border">人數</th>
+              </tr>
+            </thead>
+            <tbody id="topBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+
+      <div id="tab-admin" class="hidden tab-panel bg-card rounded-2xl border border-border p-4">
+        <div class="grid lg:grid-cols-2 gap-6">
+          <!-- 課程/期別建立 -->
+          <div class="bg-chip rounded-2xl p-4 border border-border">
+            <h3 class="font-semibold mb-3">課程/期別建立</h3>
+            <div class="grid sm:grid-cols-2 gap-3">
+              <div class="sm:col-span-2">
+                <label class="block text-sm text-muted">課程標題</label>
+                <input id="courseTitle" class="w-full bg-card rounded-xl px-3 py-2 border border-border" placeholder="例如：AI 工具入門" />
+              </div>
+              <div>
+                <label class="block text-sm text-muted">期別名稱</label>
+                <input id="instanceTitle" class="w-full bg-card rounded-xl px-3 py-2 border border-border" placeholder="例如：2025-Q4 第1梯" />
+              </div>
+              <div>
+                <label class="block text-sm text-muted">最多人數 (可空)</label>
+                <input id="instanceCap" type="number" class="w-full bg-card rounded-xl px-3 py-2 border border-border" />
+              </div>
+              
+              <div class="sm:col-span-2">
+                <button id="btnCreateCourse" class="px-4 py-2 rounded-xl bg-accent">建立課程與期別</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 名單上傳/匯出 -->
+          <div class="bg-chip rounded-2xl p-4 border border-border">
+            <h3 class="font-semibold mb-3">名單上傳 / 匯出</h3>
+            <div class="mt-3 flex gap-2 items-center">
+              <button id="btnUploadCsv" class="px-4 py-2 rounded-xl bg-accent">上傳</button>
+              <button id="btnExportTemplate" class="px-4 py-2 rounded-xl bg-chip border border-border">下載</button>
+              <button id="btnRefreshPeople" class="px-4 py-2 rounded-xl bg-chip border border-border">載入</button>
+              <div id="peopleCountLabel" class="text-sm text-muted ml-4">名單：— 人</div>
+            </div>
+            <div class="mt-3">
+              <input type="file" id="uploadCsv" accept=".csv" class="block w-full text-sm" />
+            </div>
+            <!-- Upload result (table) -->
+            <div id="uploadResult" class="mt-4 bg-card p-3 rounded-xl border border-border text-sm max-h-64 overflow-auto scrollbar-thin hidden">
+              <div id="uploadSummary" class="text-sm text-muted mb-2"></div>
+              <div class="overflow-auto">
+                <table id="uploadTable" class="min-w-full text-sm">
+                  <thead>
+                    <tr class="text-left text-muted">
+                      <th class="py-1 pr-4">部門</th>
+                      <th class="py-1 pr-4">組站</th>
+                      <th class="py-1 pr-4">地點</th>
+                      <th class="py-1 pr-4">ASE_ID</th>
+                      <th class="py-1 pr-4">姓名</th>
+                      <th class="py-1 pr-4">姓名英文</th>
+                    </tr>
+                  </thead>
+                  <tbody id="uploadTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <!-- Collapsible: Current people list (default hidden) -->
+            <div id="peopleListWrap" class="mt-4 bg-card p-3 rounded-xl border border-border text-sm max-h-64 overflow-auto scrollbar-thin hidden">
+              <div class="mb-2">
+                <input id="peopleSearch" class="w-full bg-chip rounded-xl px-3 py-2 border border-border" placeholder="搜尋（部門/組站/ASE_ID/姓名/英文）" />
+              </div>
+              <div class="overflow-auto">
+                <table id="peopleTable" class="min-w-full text-sm border border-border border-collapse">
+                  <thead>
+                    <tr class="text-left text-muted bg-chip/50">
+                      <th class="px-3 py-2 border border-border">部門</th>
+                      <th class="px-3 py-2 border border-border">組站</th>
+                      <th class="px-3 py-2 border border-border">ASE_ID</th>
+                      <th class="px-3 py-2 border border-border">姓名</th>
+                      <th class="px-3 py-2 border border-border">姓名英文</th>
+                    </tr>
+                  </thead>
+                  <tbody id="peopleTableBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- 課程名單（CQE | AI Class） -->
+          <div class="bg-chip rounded-2xl p-4 border border-border lg:col-span-2">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="font-semibold">課程名單（CQE | AI Class）</h3>
+              <button id="btnLoadExtCourses" class="px-3 py-2 rounded-xl bg-chip border border-border">載入課程</button>
+            </div>
+            <div id="extCoursesWrap" class="bg-card rounded-xl p-3 border border-border max-h-72 overflow-auto scrollbar-thin">
+              <div id="extCoursesHint" class="text-sm text-muted">按「載入課程」以顯示外部 Supabase 專案的 course 表</div>
+              <div class="overflow-auto mt-2 hidden" id="extCoursesTableWrap">
+                <table id="extCoursesTable" class="min-w-full text-sm border border-border border-collapse">
+                  <thead id="extCoursesHead"></thead>
+                  <tbody id="extCoursesBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ===================== 基本設定 =====================
+    // TODO: 換成你的 Supabase 專案參數
+    const SUPABASE_URL = localStorage.getItem('SUPABASE_URL') || 'https://fyanbxtqelfqlegrdqrv.supabase.co';
+    const SUPABASE_ANON_KEY = localStorage.getItem('SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ5YW5ieHRxZWxmcWxlZ3JkcXJ2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk5ODEyNTksImV4cCI6MjA3NTU1NzI1OX0.Gkhxy07fFYt6z48FeIx2ZATfCtL7OxnuKdI9G17FGVc';
+
+  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  // External Supabase (CQE | AI Class)
+  const EXT_SUPABASE_URL = localStorage.getItem('EXT_SUPABASE_URL') || 'https://kxyguqnoudtnxkexbsnc.supabase.co';
+  const EXT_SUPABASE_ANON_KEY = localStorage.getItem('EXT_SUPABASE_ANON_KEY') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imt4eWd1cW5vdWR0bnhrZXhic25jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTU5MzQxODUsImV4cCI6MjA3MTUxMDE4NX0.Tpv6J1KM10lyrLORWdXjN45YGedcCrjdjjdYV61qp38';
+  const extSupabase = window.supabase.createClient(EXT_SUPABASE_URL, EXT_SUPABASE_ANON_KEY);
+    const state = {
+      role: null, // 'admin' | 'learner'
+      employee_id: null,
+      profile: null,
+      instances: [],
+      people: [],
+      peopleListData: [],
+      availabilityCache: new Map(),
+      dragMode: null, // true=選取, false=取消
+      dragging: false,
+  gridSpec: { granularity: 30, start: 8*60, end: 17*60, days: [1,2,3,4,5] },
+    };
+
+    const whoEle = document.getElementById('whoami');
+    const loginSection = document.getElementById('loginSection');
+    const appSection = document.getElementById('appSection');
+
+    // ===== 工具：時間/欄位 =====
+    const pad2 = n => (n<10? '0'+n : ''+n);
+    const minToHHMM = m => `${pad2(Math.floor(m/60))}:${pad2(m%60)}`;
+
+    function toast(msg){ alert(msg); }
+
+    function setSession(role, employee_id){
+      state.role = role; state.employee_id = employee_id || null;
+      localStorage.setItem('SESSION_ROLE', role || '');
+      localStorage.setItem('SESSION_EID', employee_id || '');
+      whoEle.textContent = role ? (role==='admin' ? '以 Admin 身份登入' : `學員｜${employee_id}`) : '';
+      document.querySelector('[data-tab="tab-admin"]').classList.toggle('hidden', role!=='admin');
+    }
+
+    function restoreSession(){
+      const r = localStorage.getItem('SESSION_ROLE');
+      const e = localStorage.getItem('SESSION_EID');
+      if(!r) return;
+      setSession(r, e);
+      loginSection.classList.add('hidden');
+      appSection.classList.remove('hidden');
+      // initialize app and ensure a tab is selected/visible
+      initApp().then(()=>{
+        // call bindTabs again to ensure active state (bindTabs already clicks first visible tab)
+        // but if bindTabs has already run inside initApp, ensure label is set by clicking first visible tab
+        const first = Array.from(document.querySelectorAll('.tab-btn')).find(t=> !t.classList.contains('hidden'));
+        if(first) first.click();
+      });
+    }
+
+    // ===================== 登入邏輯 =====================
+    document.getElementById('loginLearnerBtn').onclick = async () => {
+      const eid = document.getElementById('empIdInput').value.trim();
+      if(!eid) return toast('請輸入 Employee ID');
+      // 驗證是否存在於 people 表
+      const { data, error } = await supabase.from('people').select('id,employee_id,name').eq('employee_id', eid).maybeSingle();
+      if(error) return toast('查詢失敗：'+error.message);
+      if(!data) return toast('找不到該員工編號，請先由 Admin 上傳名單');
+      setSession('learner', eid);
+      loginSection.classList.add('hidden');
+      appSection.classList.remove('hidden');
+      initApp();
+    };
+
+    document.getElementById('loginAdminBtn').onclick = () => {
+      const u = document.getElementById('adminUser').value.trim();
+      const p = document.getElementById('adminPass').value;
+      if(u==='Admin' && p==='Aa613643$$'){
+        setSession('admin', null);
+        loginSection.classList.add('hidden');
+        appSection.classList.remove('hidden');
+        initApp();
+      }else{
+        toast('帳密不正確');
+      }
+    };
+
+    // Enable Enter-to-submit for login inputs
+    const empInput = document.getElementById('empIdInput');
+    if(empInput){
+      empInput.addEventListener('keydown', (e)=>{
+        if(e.key === 'Enter'){
+          e.preventDefault();
+          const btn = document.getElementById('loginLearnerBtn');
+          if(btn) btn.click();
+        }
+      });
+    }
+    const adminUserInput = document.getElementById('adminUser');
+    const adminPassInput = document.getElementById('adminPass');
+    function tryAdminLoginOnEnter(e){
+      if(e.key === 'Enter'){
+        e.preventDefault();
+        const btn = document.getElementById('loginAdminBtn');
+        if(btn) btn.click();
+      }
+    }
+    if(adminUserInput) adminUserInput.addEventListener('keydown', tryAdminLoginOnEnter);
+    if(adminPassInput) adminPassInput.addEventListener('keydown', tryAdminLoginOnEnter);
+
+    document.getElementById('logoutBtn').onclick = () => {
+      localStorage.removeItem('SESSION_ROLE');
+      localStorage.removeItem('SESSION_EID');
+      location.reload();
+    };
+
+    // ===================== 初始化 =====================
+    async function initApp(){
+      await Promise.all([loadInstances(), loadPeople()]);
+      bindTabs();
+      buildSurveyGrid();
+      bindAdmin();
+      bindStats();
+      // enable header sorting on static tables
+      ['filledTable','unfilledTable','topTable','uploadTable','peopleTable'].forEach(id=> enableTableSorting(id));
+    }
+
+    async function loadPeople(){
+      const { data, error } = await supabase.from('people').select('*').order('employee_id');
+      if(!error) state.people = data || [];
+      // 更新名單人數標籤
+      setPeopleCountLabel((state.people||[]).length);
+    }
+
+    async function loadInstances(){
+      // 取回所有期別，依建立時間新→舊排序
+      const { data, error } = await supabase
+        .from('course_instances')
+        .select('id,title,granularity,created_at')
+        .order('created_at', { ascending: false });
+      const rows = data || [];
+      // 依標題去重：保留每個 title 的第一筆（因已按 created_at desc，故為最新）
+      const seen = new Set();
+      const unique = [];
+      for(const r of rows){
+        const key = (r.title||'').trim();
+        if(!key) continue;
+        if(seen.has(key)) continue;
+        seen.add(key);
+        unique.push(r);
+      }
+      state.instances = unique;
+
+      const sels = [document.getElementById('surveyInstanceSel'), document.getElementById('statsInstanceSel')];
+      sels.forEach(sel=>{
+        if(!sel) return;
+        const prev = sel.value;
+        sel.innerHTML = '';
+        state.instances.forEach(i=>{
+          const o = document.createElement('option'); o.value = i.id; o.textContent = i.title; sel.appendChild(o);
+        });
+        // 嘗試保留原先選擇；若不在清單中則選第一筆
+        if(prev && Array.from(sel.options).some(opt=>opt.value===prev)) sel.value = prev;
+        else if(sel.options.length) sel.selectedIndex = 0;
+      });
+    }
+
+    function bindTabs(){
+      const tabs = Array.from(document.querySelectorAll('.tab-btn'));
+      function setActive(btn){
+        tabs.forEach(b=> b.classList.remove('ring-2','ring-accent','bg-accent/10'));
+        if(!btn) return;
+        btn.classList.add('ring-2','ring-accent','bg-accent/10');
+        // 已不需要額外的文字說明標籤
+      }
+      tabs.forEach(btn=>{
+        btn.onclick = ()=>{
+          const id = btn.dataset.tab; if(!id) return;
+          document.querySelectorAll('.tab-panel').forEach(p=>p.classList.add('hidden'));
+          document.getElementById(id).classList.remove('hidden');
+          setActive(btn);
+          // Auto load when switching to stats tab
+          if(id==='tab-stats'){
+            // Defer to ensure functions are bound (bindStats runs after bindTabs in initApp)
+            setTimeout(()=>{
+              try{ typeof loadStats==='function' && loadStats(); }catch(e){}
+              try{ typeof loadTopN==='function' && loadTopN(); }catch(e){}
+            }, 0);
+          }
+          // When switching to survey tab, ensure learner availability is loaded for current instance
+          if(id==='tab-survey' && state.role==='learner'){
+            setTimeout(()=>{ try{ loadMyAvailabilityIntoGrid(); }catch(e){} }, 0);
+          }
+          // When switching to admin tab, auto load current people list and external courses
+          if(id==='tab-admin' && state.role==='admin'){
+            setTimeout(()=>{
+              try{ typeof renderPeopleList==='function' && renderPeopleList(); }catch(e){}
+              try{ typeof loadExternalCourses==='function' && loadExternalCourses(); }catch(e){}
+            }, 0);
+          }
+        };
+      });
+      // ensure a tab is visible by default: choose first non-hidden tab
+      const firstVisible = tabs.find(t=> !t.classList.contains('hidden'));
+      if(firstVisible){
+        // programmatically click to initialize UI
+        firstVisible.click();
+      }
+    }
+
+    // ===================== 可用性網格（Mon–Fri × 08:00–17:00） =====================
+    function gridSlots(gran){
+      const spec = state.gridSpec; const slots=[];
+      for(const d of spec.days){
+        for(let m=spec.start; m<spec.end; m+=gran){
+          slots.push({ weekday:d, start:m, end: m+gran });
+        }
+      }
+      return slots;
+    }
+
+    function dayName(d){ return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]; }
+
+    function buildSurveyGrid(){
+  const gran = 30;
+  const slots = gridSlots(gran);
+  // 產生時間欄位，排除 08:00–09:00 與 12:00–13:00（午休）
+  const allTimes = Array.from({length: (state.gridSpec.end-state.gridSpec.start)/gran}, (_,i)=> state.gridSpec.start + i*gran);
+  const times = allTimes.filter(t => !((t >= 8*60 && t < 9*60) || (t >= 12*60 && t < 13*60)));
+
+      const container = document.getElementById('grid');
+      container.innerHTML='';
+
+      // header row（取消上午/下午群組，改用顏色深淺區隔）
+    const table = document.createElement('div');
+    table.className = 'inline-grid gap-1';
+  table.style.gridTemplateColumns = `45px repeat(${times.length}, 68px)`;
+
+      const headCells = [document.createElement('div')];
+      headCells[0].className = 'p-2 text-sm text-muted'; headCells[0].textContent='';
+      times.forEach(t=>{
+        const c = document.createElement('div');
+        c.className='p-2 text-xs text-muted text-center border-b border-border';
+        // 更明顯區隔：上午使用較淺的 card 色，下午使用較深的 chip 色
+        if(t < 12*60) c.classList.add('bg-card/40');
+        if(t >= 13*60) c.classList.add('bg-chip/80');
+        c.textContent=minToHHMM(t);
+        headCells.push(c);
+      });
+      headCells.forEach(c=>table.appendChild(c));
+
+      // rows by weekday
+      for(const d of state.gridSpec.days){
+        const rowHead = document.createElement('div'); rowHead.className='p-2 text-sm font-medium sticky left-0'; rowHead.textContent=dayName(d);
+        table.appendChild(rowHead);
+        for(const t of times){
+          const cell = document.createElement('div');
+            cell.className = 'grid-cell w-[70px] h-10 border border-border/50 rounded-md cursor-pointer';
+          // 更明顯區隔：上午使用 bg-card、下午使用 bg-chip
+          if(t < 12*60) cell.classList.add('bg-card');
+          if(t >= 13*60) cell.classList.add('bg-chip');
+          cell.dataset.weekday=d; cell.dataset.start=t; cell.dataset.end=t+gran;
+          // 禁用午休 12:00–13:00 的時段
+          const isLunch = (t >= 12*60 && (t+gran) <= 13*60);
+          if(isLunch){
+            cell.dataset.disabled = '1';
+            cell.classList.remove('cursor-pointer');
+            cell.classList.add('pointer-events-none','opacity-60','cursor-not-allowed','bg-chip/30');
+          }
+          cell.onmousedown = e=>startDrag(cell);
+          cell.onmouseover = e=>dragOver(cell);
+          cell.onmouseup = endDrag;
+          table.appendChild(cell);
+        }
+      }
+
+      container.appendChild(table);
+
+  // 粒度固定 30 分，不需下拉與事件
+      document.getElementById('btnClearAll').onclick = ()=>{
+        document.querySelectorAll('#grid .grid-cell.active').forEach(c=>c.classList.remove('active','!bg-accent'));
+      };
+      // 取消整列/整欄全選按鈕
+
+      document.addEventListener('mouseup',()=>{ state.dragging=false; state.dragMode=null; }, { once:true });
+
+      document.getElementById('btnSaveAvail').onclick = saveAvailability;
+
+      // 如果已登入學員，載入既有設定
+      if(state.role==='learner') loadMyAvailabilityIntoGrid();
+      // 當學員切換期別時，自動載入該期別的可用時段
+      const surveySel = document.getElementById('surveyInstanceSel');
+      if(surveySel){
+        surveySel.onchange = ()=>{ if(state.role==='learner') loadMyAvailabilityIntoGrid(); };
+      }
+    }
+
+    function startDrag(cell){
+      if(cell?.dataset?.disabled==='1') return; // 禁用午休
+      state.dragging = true;
+      const willSelect = !cell.classList.contains('active');
+      state.dragMode = willSelect; // true=選取, false=取消
+      applyCell(cell, willSelect);
+    }
+    function dragOver(cell){ if(state.dragging && cell?.dataset?.disabled!=='1') applyCell(cell, state.dragMode); }
+    function endDrag(){ state.dragging=false; }
+
+    function applyCell(cell, on){ if(cell?.dataset?.disabled==='1') return; cell.classList.toggle('active', !!on); cell.classList.toggle('!bg-accent', !!on); }
+
+    async function loadMyAvailabilityIntoGrid(){
+      const instId = document.getElementById('surveyInstanceSel').value;
+      const eid = state.employee_id;
+      if(!eid) return;
+      const { data, error } = await supabase.from('person_availability').select('weekday,start_minute,end_minute').eq('instance_id', instId).eq('employee_id', eid);
+      if(error) return;
+  const gran = 30;
+      const active = new Set(data.map(r=> `${r.weekday}-${r.start_minute}-${r.end_minute}`));
+      document.querySelectorAll('#grid .grid-cell').forEach(c=>{
+        const k = `${c.dataset.weekday}-${c.dataset.start}-${c.dataset.end}`;
+        if(active.has(k) && c.dataset.disabled!=='1') c.classList.add('active','!bg-accent'); else c.classList.remove('active','!bg-accent');
+      });
+    }
+
+    async function saveAvailability(){
+      if(state.role!=='learner') return toast('僅學員可儲存可用時段');
+      const instId = document.getElementById('surveyInstanceSel').value;
+      const eid = state.employee_id;
+      // 先刪除再重建
+      await supabase.from('person_availability').delete().eq('instance_id', instId).eq('employee_id', eid);
+      const rows=[];
+      document.querySelectorAll('#grid .grid-cell.active').forEach(c=>{
+        rows.push({ instance_id: instId, employee_id: eid, weekday: +c.dataset.weekday, start_minute:+c.dataset.start, end_minute:+c.dataset.end });
+      });
+      if(rows.length===0){ toast('已清空'); return; }
+      const { error } = await supabase.from('person_availability').insert(rows);
+      if(error) toast('儲存失敗：'+error.message); else toast('已儲存');
+    }
+
+    // ===================== Admin：建立課/期別 & 上傳 =====================
+    function bindAdmin(){
+      if(state.role!=='admin') return;
+      document.getElementById('btnCreateCourse').onclick = createCourseAndInstance;
+      document.getElementById('btnExportTemplate').onclick = exportTemplate;
+      document.getElementById('btnUploadCsv').onclick = uploadCsv;
+      const btnRefresh = document.getElementById('btnRefreshPeople');
+      if(btnRefresh) btnRefresh.onclick = togglePeopleList;
+      const btnExt = document.getElementById('btnLoadExtCourses');
+      if(btnExt) btnExt.onclick = loadExternalCourses;
+      document.querySelector('[data-tab="tab-admin"]').click();
+    }
+
+    async function loadExternalCourses(){
+      const hint = document.getElementById('extCoursesHint');
+      const wrap = document.getElementById('extCoursesTableWrap');
+      const thead = document.getElementById('extCoursesHead');
+      const tbody = document.getElementById('extCoursesBody');
+      if(!extSupabase){ toast('外部連線未初始化'); return; }
+      hint.textContent = '讀取中…'; wrap.classList.add('hidden'); thead.innerHTML=''; tbody.innerHTML='';
+
+      async function tryFetch(table){
+        try{
+          const { data, error } = await extSupabase.from(table).select('*');
+          if(error) return { ok:false, error };
+          return { ok:true, rows: data || [] };
+        }catch(e){ return { ok:false, error:e }; }
+      }
+
+      let usedTable = 'course';
+      let res = await tryFetch('course');
+      if(!res.ok || (res.ok && res.rows.length===0)){
+        const firstErr = res.ok ? null : res.error;
+        const res2 = await tryFetch('courses');
+        if(res2.ok && res2.rows.length>0){ res = res2; usedTable='courses'; }
+        else{
+          console.error('External course load failed', { firstErr, secondErr: res2.error });
+          const msg = [firstErr?.message, res2.error?.message].filter(Boolean).join('；');
+          hint.textContent = msg ? `讀取失敗：${msg}` : '讀取失敗，請檢查外部專案的表名與權限（RLS/Policies）';
+          return;
+        }
+      }
+
+      // Only show 'title' column, filter rows to only those with date < today
+      const rows = res.rows || [];
+      // Detect a date-like key from available columns
+      const candidateDateKeys = ['date','start_date','start_at','begin','begin_at','startTime','starttime','time','created_at','createdAt'];
+      const keys = rows.length ? Object.keys(rows[0]) : [];
+      const dateKey = candidateDateKeys.find(k => keys.includes(k));
+
+      function parseDate(v){
+        if(v==null) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      }
+      const today = new Date(); today.setHours(0,0,0,0);
+      let filtered = rows;
+      if(dateKey){
+        filtered = rows.filter(r => {
+          const d = parseDate(r[dateKey]);
+          return d && d < today;
+        });
+      } else {
+        // No date column found; show helpful hint
+        hint.textContent = `找不到日期欄位（預期之一：${candidateDateKeys.join(', ')}），無法判定過去課程。`;
+        // We can still render nothing or all titles; choose to show none to match『只帶入過去式』
+        filtered = [];
+      }
+
+      // Keep only title field
+      const titles = filtered.map(r => (r.title ?? '')).filter(t => String(t).trim().length>0);
+      if(titles.length===0){
+        wrap.classList.remove('hidden');
+        // Build head with title only
+        thead.innerHTML = '';
+        const trHead2 = document.createElement('tr');
+  const th = document.createElement('th'); th.className='px-3 py-2 border border-border bg-chip/50 text-left'; th.textContent=''; trHead2.appendChild(th);
+        thead.appendChild(trHead2);
+        tbody.innerHTML = '';
+        hint.textContent = dateKey ? `無符合「過去」的資料（表：${usedTable}，日期欄：${dateKey}）` : hint.textContent;
+        return;
+      }
+
+      // Build head with single 'title' column
+      thead.innerHTML=''; tbody.innerHTML='';
+      const trHead = document.createElement('tr');
+  const th = document.createElement('th'); th.className='px-3 py-2 border border-border bg-chip/50 text-left'; th.textContent=''; trHead.appendChild(th);
+      thead.appendChild(trHead);
+      titles.forEach(t => {
+        const tr = document.createElement('tr');
+        tr.className = 'cursor-pointer hover:bg-chip/50';
+        tr.title = '點擊帶入課程標題';
+        tr.innerHTML = `<td class=\"px-3 py-2 border border-border\">${escapeHtml(String(t))}</td>`;
+        tr.onclick = () => {
+          const input = document.getElementById('courseTitle');
+          if(input){
+            input.value = String(t);
+            input.focus();
+            try{ input.scrollIntoView({ behavior:'smooth', block:'center' }); }catch(e){}
+            input.classList.add('ring-2','ring-accent');
+            setTimeout(()=> input.classList.remove('ring-2','ring-accent'), 600);
+          }
+        };
+        tbody.appendChild(tr);
+      });
+      hint.textContent = `已載入 ${titles.length} 筆（表：${usedTable}，只顯示過去課程）`;
+      wrap.classList.remove('hidden');
+      // enable sorting for the external courses table (single column)
+      enableTableSorting('extCoursesTable');
+    }
+
+    function renderPeopleTableRows(rows){
+      const tbody = document.getElementById('peopleTableBody');
+      if(!tbody) return;
+      tbody.innerHTML = '';
+      (rows||[]).forEach(r=>{
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="px-3 py-2 border border-border">${escapeHtml(r.dept||'')}</td>
+                        <td class="px-3 py-2 border border-border">${escapeHtml(r.group||'')}</td>
+                        <td class="px-3 py-2 border border-border">${escapeHtml(r.employee_id||'')}</td>
+                        <td class="px-3 py-2 border border-border">${escapeHtml(r.name||'')}</td>
+                        <td class="px-3 py-2 border border-border">${escapeHtml(r.name_en||'')}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function renderPeopleList(){
+      const wrap = document.getElementById('peopleListWrap');
+      wrap.classList.add('hidden');
+      const { data, error } = await supabase
+        .from('people')
+        .select('employee_id,name,name_en,dept,"group"')
+        .order('employee_id');
+      if(error){ toast('讀取名單失敗：'+error.message); return; }
+      state.peopleListData = data || [];
+      renderPeopleTableRows(state.peopleListData);
+      // 同步更新名單人數標籤（以目前查詢到的總筆數為準）
+      setPeopleCountLabel((state.peopleListData||[]).length);
+
+      // search binding (fuzzy contains across columns)
+      const input = document.getElementById('peopleSearch');
+      if(input){
+        input.oninput = () => {
+          const q = (input.value||'').trim().toLowerCase();
+          if(!q){ renderPeopleTableRows(state.peopleListData); return; }
+          const filtered = state.peopleListData.filter(r =>
+            [r.dept, r.group, r.employee_id, r.name, r.name_en]
+              .some(v => (v||'').toString().toLowerCase().includes(q))
+          );
+          renderPeopleTableRows(filtered);
+        };
+      }
+      wrap.classList.remove('hidden');
+    }
+
+    async function togglePeopleList(){
+      const wrap = document.getElementById('peopleListWrap');
+      if(wrap.classList.contains('hidden')){
+        await renderPeopleList();
+        try{ wrap.scrollIntoView({ behavior:'smooth', block:'nearest' }); }catch(e){}
+      }else{
+        wrap.classList.add('hidden');
+      }
+    }
+
+    async function createCourseAndInstance(){
+      const courseTitle = document.getElementById('courseTitle').value.trim();
+      const instTitle = document.getElementById('instanceTitle').value.trim();
+      const cap = parseInt(document.getElementById('instanceCap').value || '0', 10) || null;
+  const gran = 30;
+      if(!courseTitle || !instTitle) return toast('請輸入課程標題與期別名稱');
+      const { data: c, error: e1 } = await supabase.from('courses').insert({ title: courseTitle }).select().single();
+      if(e1) return toast('建立課程失敗：'+e1.message);
+      const { error: e2 } = await supabase.from('course_instances').insert({ course_id: c.id, title: instTitle, capacity: cap, granularity: gran });
+      if(e2) return toast('建立期別失敗：'+e2.message);
+      toast('已建立課程與期別');
+      await loadInstances();
+    }
+
+    function exportTemplate(){
+      // Template without 'site' (地點); use ASE_ID label for employee_id
+      const header = ['部門','組站','ASE_ID','姓名','姓名英文'];
+      const csv = Papa.unparse([header]);
+      downloadText(csv, 'people_template.csv');
+    }
+
+    async function uploadCsv(){
+      const f = document.getElementById('uploadCsv').files[0];
+      if(!f) return toast('請選擇 CSV 檔');
+      Papa.parse(f, { header:true, skipEmptyLines:true, complete: async (res)=>{
+        const rows = (res.data||[]).map(r=>({
+          dept: (r['部門']||'').trim(),
+          group: (r['組站']||'').trim(),
+          // Accept file with or without '地點' column
+          site: ((r['地點']||r['site'])||'').trim(),
+          // accept ASE_ID or employee_id field names
+          employee_id: ((r['ASE_ID']||r['employee_id'])||'').trim(),
+          name: (r['姓名']||'').trim(),
+          name_en: (r['姓名英文']||'').trim()
+        })).filter(r=>r.employee_id);
+        // 去重：employee_id 唯一
+        const uniqueMap=new Map(); rows.forEach(r=>uniqueMap.set(r.employee_id, r));
+        const payload = Array.from(uniqueMap.values());
+        // 逐筆 upsert by employee_id
+        const { error } = await supabase.from('people').upsert(payload, { onConflict: 'employee_id' });
+        if(error){
+          toast('上傳失敗：'+error.message);
+        } else {
+          toast(`上傳完成（${payload.length} 筆，已依 employee_id 去重）`);
+          // query the rows we just upserted from Supabase to show canonical data
+          await loadPeople();
+          // build array of employee_ids to fetch
+          const ids = payload.map(p=>p.employee_id);
+          // fetch matching rows (limit safety: 1000)
+          const { data: fetched, error: fetchErr } = await supabase.from('people').select('dept, "group", site, employee_id, name, name_en').in('employee_id', ids).limit(1000);
+          if(fetchErr){
+            console.error('fetch after upsert failed', fetchErr);
+          }
+          const result = document.getElementById('uploadResult');
+          const summary = document.getElementById('uploadSummary');
+          const tbody = document.getElementById('uploadTableBody');
+          const rowsToShow = (fetched || payload).slice(0, 200); // show up to 200
+          summary.textContent = `上傳完成：${payload.length} 筆（顯示 ${rowsToShow.length} 筆）`;
+          tbody.innerHTML = '';
+          rowsToShow.forEach(r=>{
+            const tr = document.createElement('tr');
+            tr.innerHTML = `<td class="py-1 pr-4">${escapeHtml(r.dept||'')}</td>
+                            <td class="py-1 pr-4">${escapeHtml(r.group||'')}</td>
+                            <td class="py-1 pr-4">${escapeHtml(r.site||'')}</td>
+                            <td class="py-1 pr-4">${escapeHtml(r.employee_id||'')}</td>
+                            <td class="py-1 pr-4">${escapeHtml(r.name||'')}</td>
+                            <td class="py-1 pr-4">${escapeHtml(r.name_en||'')}</td>`;
+            tbody.appendChild(tr);
+          });
+          result.classList.remove('hidden');
+        }
+      }});
+    }
+
+    function downloadText(text, filename){
+      // Prepend UTF-8 BOM so Excel on Windows recognizes UTF-8 and avoids garbled Chinese
+      const bom = '\uFEFF';
+      const blob = new Blob([bom + text], { type:'text/csv;charset=utf-8;' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+    }
+
+    // ===================== 回覆統計 / 匯出 =====================
+    function bindStats(){
+      document.getElementById('btnLoadStats').onclick = loadStats;
+      const btnExpFilled = document.getElementById('btnExportFilled');
+      const btnExpSlots = document.getElementById('btnExportSlotStats');
+      if(btnExpFilled) btnExpFilled.onclick = exportFilled;
+      if(btnExpSlots) btnExpSlots.onclick = exportSlotStats;
+      // 只有 Admin 顯示匯出按鈕；學員隱藏
+      const isAdmin = state.role === 'admin';
+      if(btnExpFilled) btnExpFilled.classList.toggle('hidden', !isAdmin);
+      if(btnExpSlots) btnExpSlots.classList.toggle('hidden', !isAdmin);
+      // show stats tab by default for admin
+      // document.querySelector('[data-tab="tab-stats"]').click();
+      // 當切換期別時，自動刷新已回覆/未回覆與時段統計
+      const statsSel = document.getElementById('statsInstanceSel');
+      if(statsSel){
+        statsSel.onchange = ()=>{ loadStats(); loadTopN(); };
+      }
+    }
+
+    // 推薦時段 Top N 綁定
+
+  const btnTop = document.getElementById('btnLoadTop');
+  if(btnTop){ btnTop.onclick = loadTopN; }
+
+    async function loadTopN(){
+      const instId = document.getElementById('statsInstanceSel').value;
+      const top = Math.max(1, Math.min(50, parseInt(document.getElementById('topN').value||'5',10)));
+      const { data, error } = await supabase.rpc('get_slot_stats', { p_instance_id: instId });
+      if(error){ toast('讀取推薦失敗：'+error.message); return; }
+      const rows = (data||[]).slice(0, top);
+      const tb = document.getElementById('topBody'); tb.innerHTML='';
+      const dn = d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d];
+      const fmt = m=>{ const h = String(Math.floor(m/60)).padStart(2,'0'); const mm = String(m%60).padStart(2,'0'); return `${h}:${mm}`; };
+      rows.forEach((r, i)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML = `<td class=\"px-3 py-2 border border-border\">${i+1}</td>
+                        <td class=\"px-3 py-2 border border-border\">${dn(r.weekday)}</td>
+                        <td class="px-3 py-2 border border-border">${fmt(r.start_minute)}</td>
+                        <td class="px-3 py-2 border border-border">${fmt(r.end_minute)}</td>
+                        <td class="px-3 py-2 border border-border">${r.count}</td>`;
+        tb.appendChild(tr);
+      });
+  const hintEl = document.getElementById('topHint');
+  if(hintEl){ hintEl.textContent = ''; hintEl.classList.add('hidden'); }
+    }
+    async function loadStats(){
+      const instId = document.getElementById('statsInstanceSel').value;
+      if(!instId) return toast('請先選擇期別');
+      const { data: filledRows, error } = await supabase.from('person_availability').select('employee_id').eq('instance_id', instId);
+      if(error) return toast('讀取回覆名單失敗：'+error.message);
+      const filledSet = new Set((filledRows||[]).map(r=>r.employee_id));
+      const filled = state.people.filter(p=>filledSet.has(p.employee_id));
+      const unfilled = state.people.filter(p=>!filledSet.has(p.employee_id));
+      // Render tables
+      const fillTb = document.getElementById('filledBody'); if(fillTb) fillTb.innerHTML='';
+      const unfillTb = document.getElementById('unfilledBody'); if(unfillTb) unfillTb.innerHTML='';
+      function appendRows(tbody, rows){
+        if(!tbody) return;
+        rows.forEach(r=>{
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td class="px-3 py-2 border border-border">${escapeHtml(r.dept||'')}</td>
+                          <td class="px-3 py-2 border border-border">${escapeHtml(r.group||'')}</td>
+                          <td class="px-3 py-2 border border-border">${escapeHtml(r.employee_id||'')}</td>
+                          <td class="px-3 py-2 border border-border">${escapeHtml(r.name||'')}</td>
+                          <td class="px-3 py-2 border border-border">${escapeHtml(r.name_en||'')}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+  appendRows(fillTb, filled);
+  appendRows(unfillTb, unfilled);
+  const sum = document.getElementById('statsSummary');
+  if(sum) sum.textContent = `已回覆 : ${filled.length}人 / TTL: ${state.people.length}人`;
+  const uh = document.getElementById('unfilledHeader');
+  if(uh) uh.textContent = `未回覆: ${unfilled.length}人`;
+    }
+
+    async function exportFilled(){
+      const instId = document.getElementById('statsInstanceSel').value;
+      const { data } = await supabase.from('person_availability').select('*').eq('instance_id', instId);
+      const csv = Papa.unparse(data||[]);
+      downloadText(csv, `filled_availability_${instId}.csv`);
+    }
+
+    async function exportSlotStats(){
+      const instId = document.getElementById('statsInstanceSel').value;
+      const { data } = await supabase.from('person_availability').select('weekday,start_minute,end_minute,employee_id').eq('instance_id', instId);
+      const agg = new Map();
+      for(const r of (data||[])){
+        const k = `${r.weekday}-${r.start_minute}-${r.end_minute}`;
+        if(!agg.has(k)) agg.set(k, { weekday:r.weekday,start_minute:r.start_minute,end_minute:r.end_minute,count:0 });
+        agg.get(k).count++;
+      }
+      const rows = Array.from(agg.values()).sort((a,b)=> b.count-a.count || a.weekday-b.weekday || a.start_minute-b.start_minute);
+      const csv = Papa.unparse(rows.map(x=>({ weekday:x.weekday, start:minToHHMM(x.start_minute), end:minToHHMM(x.end_minute), count:x.count })));
+      downloadText(csv, `slot_stats_${instId}.csv`);
+    }
+
+    // ===================== 表格排序（通用） =====================
+    function enableTableSorting(tableId){
+      const table = document.getElementById(tableId);
+      if(!table) return;
+      const thead = table.querySelector('thead');
+      const tbody = table.querySelector('tbody');
+      if(!thead || !tbody) return;
+      table.classList.add('sortable');
+      const ths = Array.from(thead.querySelectorAll('th'));
+      ths.forEach((th, idx)=>{
+        th.addEventListener('click', ()=> sortBy(idx, th));
+      });
+
+      function sortBy(idx, th){
+        const curr = th.dataset.sortDir === 'asc' ? 'desc' : 'asc';
+        ths.forEach(h=> delete h.dataset.sortDir);
+        th.dataset.sortDir = curr;
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const header = (th.textContent||'').trim();
+        rows.sort((ra, rb)=>{
+          const ca = (ra.children[idx]?.textContent||'').trim();
+          const cb = (rb.children[idx]?.textContent||'').trim();
+          const va = normalizeValue(ca, header);
+          const vb = normalizeValue(cb, header);
+          let cmp = 0;
+          if(typeof va === 'number' && typeof vb === 'number') cmp = (va - vb);
+          else cmp = String(va).localeCompare(String(vb), 'zh-Hant', { numeric:true, sensitivity:'base' });
+          return curr === 'asc' ? cmp : -cmp;
+        });
+        tbody.innerHTML=''; rows.forEach(r=> tbody.appendChild(r));
+      }
+
+      function normalizeValue(text, header){
+        // numeric columns
+        if(header === '人數'){
+          const n = parseFloat(text.replace(/[^\d.-]/g,''));
+          return isNaN(n) ? Number.NEGATIVE_INFINITY : n;
+        }
+        // time columns HH:MM
+        if(header === '開始' || header === '結束'){
+          const m = text.match(/^(\d{1,2}):(\d{2})$/);
+          if(m){ return parseInt(m[1],10)*60 + parseInt(m[2],10); }
+        }
+        // weekday columns Sun..Sat or Mon..Fri
+        if(header === '星期'){
+          const map = {Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6,'日':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6};
+          return map[text] ?? text;
+        }
+        return text;
+      }
+    }
+
+    // simple HTML escape
+    function escapeHtml(s){
+      return String(s).replace(/[&<>\"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]||c));
+    }
+
+    // 更新「名單：X 人」的小標籤
+    function setPeopleCountLabel(n){
+      const lbl = document.getElementById('peopleCountLabel');
+      if(!lbl) return;
+      if(typeof n === 'number') lbl.textContent = `名單：${n} 人`;
+      else lbl.textContent = '名單：— 人';
+    }
+
+    // 自動恢復
+    restoreSession();
+  </script>
+</body>
+</html>
+
+<!-- ===================== Supabase SQL（貼到 SQL Editor 執行） =====================
+注意：此為 MVP，為了前端可直接用 anon key 存取，暫時 **未啟用 RLS**。
+上線前請依需求補齊 RLS 與 Edge Functions。
+
+-- people：名單
+create table if not exists public.people (
+  id bigserial primary key,
+  dept text,
+  "group" text,
+  site text,
+  employee_id text unique not null,
+  name text,
+  name_en text
+);
+
+-- 課程/期別
+create table if not exists public.courses (
+  id bigserial primary key,
+  title text not null,
+  created_at timestamptz default now()
+);
+
+create table if not exists public.course_instances (
+  id bigserial primary key,
+  course_id bigint references public.courses(id) on delete cascade,
+  title text not null,
+  capacity int,
+  granularity int default 30, -- 30/60
+  created_at timestamptz default now()
+);
+
+-- 可用時段（單週 Mon–Fri, 08:00–17:00 任一格）
+create table if not exists public.person_availability (
+  id bigserial primary key,
+  instance_id bigint references public.course_instances(id) on delete cascade,
+  employee_id text not null,
+  weekday int not null check (weekday between 1 and 5),
+  start_minute int not null, -- 480..1020
+  end_minute int not null,   -- start+gran
+  created_at timestamptz default now()
+);
+create index if not exists idx_pa_instance on public.person_availability(instance_id);
+create index if not exists idx_pa_emp on public.person_availability(employee_id);
+create unique index if not exists uniq_pa_cell on public.person_availability(instance_id, employee_id, weekday, start_minute, end_minute);
+
+-- 🔎 推薦時段 RPC：回傳每格的人數與比例 & 依人數排序（同分依星期/時間）
+create or replace function public.get_slot_stats(p_instance_id bigint)
+returns table(
+  weekday int,
+  start_minute int,
+  end_minute int,
+  count int,
+  ratio numeric
+) language sql stable as $$
+  with filled as (
+    select distinct employee_id from person_availability where instance_id = p_instance_id
+  ), denom as (
+    select count(*) as total from filled
+  ), agg as (
+    select weekday, start_minute, end_minute, count(distinct employee_id) as cnt
+    from person_availability
+    where instance_id = p_instance_id
+    group by 1,2,3
+  )
+  select a.weekday, a.start_minute, a.end_minute, a.cnt as count,
+         case when d.total>0 then round(a.cnt::numeric/d.total, 3) else 0 end as ratio
+  from agg a cross join denom d
+  order by a.cnt desc, a.weekday, a.start_minute;
+$$;
+
+-- 若未來要加最小比例過濾，可再包一層 view 或於前端過濾。
+
+-->
