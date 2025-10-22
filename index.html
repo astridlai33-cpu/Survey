@@ -928,9 +928,46 @@
     async function loadTopN(){
       const instId = document.getElementById('statsInstanceSel').value;
       const top = Math.max(1, Math.min(50, parseInt(document.getElementById('topN').value||'5',10)));
-      const { data, error } = await supabase.rpc('get_slot_stats', { p_instance_id: instId });
+      // 讀取該期別所有可用時段，前端以 1 小時視窗彙總
+      const { data, error } = await supabase
+        .from('person_availability')
+        .select('weekday,start_minute,end_minute,employee_id')
+        .eq('instance_id', instId);
       if(error){ toast('讀取推薦失敗：'+error.message); return; }
-      const rows = (data||[]).slice(0, top);
+
+      // 定義 1 小時彙總視窗（避開 08:00–09:00 與 12:00–13:00）
+      const hourStarts = [9*60,10*60,11*60,13*60,14*60,15*60,16*60];
+
+      // 依 weekday+employee_id 彙整該人的 30/60 分段
+      const per = new Map(); // key: `${d}-${eid}` => { s30:Set<number>, s60:Set<number> }
+      for(const r of (data||[])){
+        const key = `${r.weekday}-${r.employee_id}`;
+        let o = per.get(key);
+        if(!o){ o = { s30:new Set(), s60:new Set() }; per.set(key, o); }
+        const dur = (r.end_minute - r.start_minute);
+        if(dur >= 60){ o.s60.add(r.start_minute); }
+        else if(dur >= 30){ o.s30.add(r.start_minute); }
+      }
+
+      // 聚合：員工若同一小時內擁有 60 分段，或同時擁有 [h,h+30] 與 [h+30,h+60] 兩段，計為該小時可出席
+      const agg = new Map(); // key: `${d}-${h}-${h+60}` => { weekday, start_minute, end_minute, count }
+      for(const [key, o] of per.entries()){
+        const d = parseInt(key.split('-')[0], 10);
+        for(const h of hourStarts){
+          const ok = o.s60.has(h) || (o.s30.has(h) && o.s30.has(h+30));
+          if(ok){
+            const k = `${d}-${h}-${h+60}`;
+            if(!agg.has(k)) agg.set(k, { weekday:d, start_minute:h, end_minute:h+60, count:0 });
+            agg.get(k).count++;
+          }
+        }
+      }
+
+      // 轉陣列排序：人數 desc，其次 weekday、start
+      const rows = Array.from(agg.values())
+        .sort((a,b)=> b.count-a.count || a.weekday-b.weekday || a.start_minute-b.start_minute)
+        .slice(0, top);
+
       const tb = document.getElementById('topBody'); tb.innerHTML='';
       const dn = d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d];
       const fmt = m=>{ const h = String(Math.floor(m/60)).padStart(2,'0'); const mm = String(m%60).padStart(2,'0'); return `${h}:${mm}`; };
@@ -938,13 +975,14 @@
         const tr=document.createElement('tr');
         tr.innerHTML = `<td class=\"px-3 py-2 border border-border\">${i+1}</td>
                         <td class=\"px-3 py-2 border border-border\">${dn(r.weekday)}</td>
-                        <td class="px-3 py-2 border border-border">${fmt(r.start_minute)}</td>
-                        <td class="px-3 py-2 border border-border">${fmt(r.end_minute)}</td>
-                        <td class="px-3 py-2 border border-border">${r.count}</td>`;
+                        <td class=\"px-3 py-2 border border-border\">${fmt(r.start_minute)}</td>
+                        <td class=\"px-3 py-2 border border-border\">${fmt(r.end_minute)}</td>
+                        <td class=\"px-3 py-2 border border-border\">${r.count}</td>`;
         tb.appendChild(tr);
       });
-  const hintEl = document.getElementById('topHint');
-  if(hintEl){ hintEl.textContent = ''; hintEl.classList.add('hidden'); }
+
+      const hintEl = document.getElementById('topHint');
+      if(hintEl){ hintEl.textContent = ''; hintEl.classList.add('hidden'); }
     }
     async function loadStats(){
       const instId = document.getElementById('statsInstanceSel').value;
@@ -986,13 +1024,40 @@
 
     async function exportSlotStats(){
       const instId = document.getElementById('statsInstanceSel').value;
-      const { data } = await supabase.from('person_availability').select('weekday,start_minute,end_minute,employee_id').eq('instance_id', instId);
-      const agg = new Map();
+      const { data, error } = await supabase
+        .from('person_availability')
+        .select('weekday,start_minute,end_minute,employee_id')
+        .eq('instance_id', instId);
+      if(error){ toast('匯出失敗：'+error.message); return; }
+
+      // 1 小時視窗：09,10,11,13,14,15,16（排除 08–09、12–13）
+      const hourStarts = [9*60,10*60,11*60,13*60,14*60,15*60,16*60];
+
+      // 先按人/天彙整他的 30/60 段起點
+      const per = new Map(); // key `${d}-${eid}` => { s30:Set, s60:Set }
       for(const r of (data||[])){
-        const k = `${r.weekday}-${r.start_minute}-${r.end_minute}`;
-        if(!agg.has(k)) agg.set(k, { weekday:r.weekday,start_minute:r.start_minute,end_minute:r.end_minute,count:0 });
-        agg.get(k).count++;
+        const key = `${r.weekday}-${r.employee_id}`;
+        let o = per.get(key);
+        if(!o){ o = { s30:new Set(), s60:new Set() }; per.set(key, o); }
+        const dur = (r.end_minute - r.start_minute);
+        if(dur >= 60) o.s60.add(r.start_minute);
+        else if(dur >= 30) o.s30.add(r.start_minute);
       }
+
+      // 聚合到 1 小時視窗
+      const agg = new Map(); // key `${d}-${h}-${h+60}`
+      for(const [key, o] of per.entries()){
+        const d = parseInt(key.split('-')[0], 10);
+        for(const h of hourStarts){
+          const ok = o.s60.has(h) || (o.s30.has(h) && o.s30.has(h+30));
+          if(ok){
+            const k = `${d}-${h}-${h+60}`;
+            if(!agg.has(k)) agg.set(k, { weekday:d, start_minute:h, end_minute:h+60, count:0 });
+            agg.get(k).count++;
+          }
+        }
+      }
+
       const rows = Array.from(agg.values()).sort((a,b)=> b.count-a.count || a.weekday-b.weekday || a.start_minute-b.start_minute);
       const csv = Papa.unparse(rows.map(x=>({ weekday:x.weekday, start:minToHHMM(x.start_minute), end:minToHHMM(x.end_minute), count:x.count })));
       downloadText(csv, `slot_stats_${instId}.csv`);
