@@ -163,7 +163,7 @@
                     <th class="px-3 py-2 border border-border">組站</th>
                     <th class="px-3 py-2 border border-border">ASE_ID</th>
                     <th class="px-3 py-2 border border-border">姓名</th>
-                    <th class="px-3 py-2 border border-border">姓名英文</th>
+                    <th class="px-3 py-2 border border-border">Name</th>
                   </tr>
                 </thead>
                 <tbody id="filledBody"></tbody>
@@ -182,7 +182,7 @@
                     <th class="px-3 py-2 border border-border">組站</th>
                     <th class="px-3 py-2 border border-border">ASE_ID</th>
                     <th class="px-3 py-2 border border-border">姓名</th>
-                    <th class="px-3 py-2 border border-border">姓名英文</th>
+                    <th class="px-3 py-2 border border-border">Name</th>
                   </tr>
                 </thead>
                 <tbody id="unfilledBody"></tbody>
@@ -268,7 +268,7 @@
                       <th class="py-1 pr-4">地點</th>
                       <th class="py-1 pr-4">ASE_ID</th>
                       <th class="py-1 pr-4">姓名</th>
-                      <th class="py-1 pr-4">姓名英文</th>
+                      <th class="py-1 pr-4">Name</th>
                     </tr>
                   </thead>
                   <tbody id="uploadTableBody"></tbody>
@@ -278,7 +278,7 @@
             <!-- Collapsible: Current people list (default hidden) -->
             <div id="peopleListWrap" class="mt-4 bg-card p-3 rounded-xl border border-border text-sm max-h-64 overflow-auto scrollbar-thin hidden">
               <div class="mb-2">
-                <input id="peopleSearch" class="w-full bg-chip rounded-xl px-3 py-2 border border-border" placeholder="搜尋（部門/組站/ASE_ID/姓名/英文）" />
+                <input id="peopleSearch" class="w-full bg-chip rounded-xl px-3 py-2 border border-border" placeholder="搜尋（部門/組站/ASE_ID/姓名/Name）" />
               </div>
               <div class="overflow-auto">
                 <table id="peopleTable" class="min-w-full text-sm border border-border border-collapse">
@@ -288,7 +288,7 @@
                       <th class="px-3 py-2 border border-border">組站</th>
                       <th class="px-3 py-2 border border-border">ASE_ID</th>
                       <th class="px-3 py-2 border border-border">姓名</th>
-                      <th class="px-3 py-2 border border-border">姓名英文</th>
+                      <th class="px-3 py-2 border border-border">Name</th>
                     </tr>
                   </thead>
                   <tbody id="peopleTableBody"></tbody>
@@ -835,7 +835,7 @@
 
     function exportTemplate(){
       // Template without 'site' (地點); use ASE_ID label for employee_id
-      const header = ['部門','組站','ASE_ID','姓名','姓名英文'];
+      const header = ['部門','組站','ASE_ID','姓名','Name'];
       const csv = Papa.unparse([header]);
       downloadText(csv, 'people_template.csv');
     }
@@ -852,7 +852,7 @@
           // accept ASE_ID or employee_id field names
           employee_id: ((r['ASE_ID']||r['employee_id'])||'').trim(),
           name: (r['姓名']||'').trim(),
-          name_en: (r['姓名英文']||'').trim()
+          name_en: (r['Name']||'').trim()
         })).filter(r=>r.employee_id);
         // 去重：employee_id 唯一
         const uniqueMap=new Map(); rows.forEach(r=>uniqueMap.set(r.employee_id, r));
